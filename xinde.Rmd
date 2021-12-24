@@ -1,0 +1,710 @@
+---
+title: "Final Project: Progress Report"
+date: today
+
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    theme: flatly
+---
+
+# Overview
+
+> In this progress report, you'll show some intermediate results of your final project. (Note: This milestone is considered as part of the project management. The grades are only tentative. You should focus on getting some progress. Your final project outcome will outweight the intermediate results.)
+
+0. (5%) Fill the basic information
+
+    * Project title: {replace this with your project title}
+    * Repository: {replace this with your git repository link}
+    * Team member(s): {replace the following with your member information}
+Lastname, Firstname (email: PITT EMAIL)
+Lastname, Firstname (email: PITT EMAIL)
+Lastname, Firstname (email: PITT EMAIL)
+
+1. (40%) Extend your abstract, describe your project in more details. It should be 300--500 words in length providing:
+    + your project goal, or the problem you plan to work on; 
+    + (motivation and significance) why the problem is interesting and/or important; 
+    + the approach you plan to take, including what data mining tasks you will perform, and what potential techniques you will try; 
+    + what dataset you plan to use and how you will get the data (if the data is publicly available, provide the exact reference to the data; otherwise, provide a description about the data source).
+
+2. (30%) Give some preliminary description or analysis about your dataset(s). You should have early numbers or a figure in this report. This part can be short or long, depending on your actual progress. 
+
+3. (25%) The following questions are design to help you manage the progress in doing the final project. Your answers don't need to be long or detailed but will show that you have a plan to address them in your final report.
+    a) What do you try to accomplish in this project? What have you done so far?
+    b) What are the strengths/novelty of your proposed idea? Why is the problem challenging?
+    c) How will you evaluate your method(s)? What are the performance measures and baseline methods?
+    d) Have you found any the research or works related to your project/problem/data? Where do you find the related work? 
+    e) Are there any challenges you encounter so far? How do you plan to solve it?
+
+
+```{r document_setup, echo=F, message=F, warning=F}
+# This chunk can include things you need for the rest of the document
+library('ggplot2') ## most of the time you will need ggplot
+#library(MASS) # for the example dataset 
+library(plyr) # for recoding data
+library(ROCR) # for plotting roc in problem3
+library(e1071) # for NB and SVM
+library(rpart) # for decision tree
+library(ada) # for adaboost
+library(rattle)
+library(class)
+library(dplyr)#for use 
+library(lars)
+library(cluster)
+library('foreign')
+library(ggcorrplot)
+library(caret)
+library(boot)
+theme_set(theme_bw()) # change the default ggplot theme to black-and-white
+
+knitr::opts_chunk$set(
+  echo=T, ## show your R code chunk
+  message = F, ## hide the message
+  warning = F, ## hide the warning
+  autodep = T ## make sure your separate code chunks can find the dependencies (from other code chunk)
+)
+```
+
+# 0. Fill the basic information
+
+    * Project title: H2B Visa certification classifier
+    * Repository: https://github.com/class-data-mining-master/2020-fall-dm-project-team03-cozy-eggs
+    * Team member(s):
+      - Qi, Nianyun (email: niq5@pitt.edu)
+      - Zhou, Ziyue (email: ziz53@pitt.edu)
+      - Chen, Ellee (email: yec24@pitt.edu)
+
+# 1. Extended abstract
+
+Our project goal is to build a classifier of H2B Visa certification for future employers and employees to have a better understanding of how to prepare application and what kind of requirement is most likely be approved. The dataset contains two parts of H2 Visa collected since 2000 - H2A Visa for agricultural workers and H2B Visa for non-agricultural unskilled workers. We plan to investigate the data of H2B Visa in the year of 2019 and build our classifier based on it.
+
+The United States has been proud of her diversity and the big melting pot culture she has developed over the past centuries. Although the Trump government does not agree with that, we cannot deny the contributions of those far-away-from-home, hard working men and women who have picked on the jobs that most people don't want to do. With a discrimination grows against foreigner workers, we want to help them by analyzing the Visa that this government has issued and hope to peek at what the country needs in regard of the workforce.
+
+Our H2B Visa dataset is more than 9000 records and beyond 50 predictors (columns). We will use the dataset to fit binary classifiers by the method of logistic regression and clustering techniques. We will build classifiers on the following aspects - employer's state, whether having represent agency, full-time employment, working hours per week, payment rate, overtime rate, experiences requirement, and temporary need frequency.
+
+Here are what we have done so far:
+
+1. We've cleaned the dataset by deleting records with NA value because we want to focus on meaningful data, plus the abundance of the number of data which we have is quite enough for the classifier model.
+
+2. We've decided to use 10 features and 1 response variable to make our classifier: 
+
+* Features:
+
+  - EMPLOYER_STATE
+
+  - EMPLOYER_REP_BY_AGENT
+
+  - SOC_CODE
+
+  - FULL_TIME_POSITION
+
+  - NATURE_OF_TEMPORARY_NEED
+
+  - BASIC_NUMBER_OF_HOURS
+
+  - BASIC_RATE_OF_PAY
+
+  - OVERTIME_RATE_FROM
+
+  - EMP_EXPERIENCE_REQD
+
+  - WORKSITE_STATE
+
+* Resonse:
+
+  - CASE_STATUS
+
+3. We've relabeled categorical variables with numbers (please see details in section 2)
+
+The beneath steps are what we plan to do:
+
+1. Using cluster / box plot to delete those lies outside the cluster as noise.
+
+2. Using logistic model and cluster to classify future applications.
+
+
+# 2. Preliminary results
+
+### 1. Import data set and feature selection:
+
+Import the original data set from https://github.com/BuzzFeedNews/H-2-certification-data using H2B visa dataset of the year 2019, and check it's dimension.
+```{r, import_original_dataset}
+# import the dataset
+H2B_data <- read.csv(file = 'xinde.csv', header = TRUE)
+
+# check the dimension of the data set
+dim(H2B_data)
+```
+
+Among those 50 features in the original dataset, we assume that the company's name and specific address, anything related to law firm does not have anything related to the visa application results.
+
+1. We simply delete all the records with NA value on any of the column because we want to focus on meaningful data. Since we have 9000+ data, after deleting them we still got enough records.
+
+2. We set "Certification" and "Partial Certification" as "Certification", and all other results as "Rejected". We ignore the "withdraw" of the visa application.
+
+3. We delete "yearly payment" category result in "BASIC_RATE_OF_PAY", since it only has 6 records. So all we have is hourly payment number for "BASIC_RATE_OF_PAY".
+
+4. We use "OVERTIME_RATE_FROM" and delete the field "OVERTIME_RATE_TO". We assume it is the overtime working payment number, because most company won't pay the highest rate to their employee for overtime.
+
+5. We delete the column "EDUCATION_LEVEL" because over 90% of the data has value None, which won't make a contribute to our model.
+
+6. We use the first two digit in "SOC_CODE" as the job category, and rewrite them. For example: "39-2021" will be rewrited as "39". The empty value records are deleted.
+
+**We decided to only use these fields for our final data set:**
+
+  * CASE_STATUS: The H2B visa application status.
+
+  * EMPLOYER_STATE: The employer's state in the US.
+
+  * EMPLOYER_REP_BY_AGENT: Either the employer use agent to represent them applying the visa.
+
+  * SOC_CODE: the employers' job social number,standard occupational classification.
+
+  * FULL_TIME_POSITION: Whether the job is a full time position or not.
+
+  * NATURE_OF_TEMPORARY_NEED: The job needed based on what occurrences.
+
+  * BASIC_NUMBER_OF_HOURS: Weekly working hours needed.
+
+  * BASIC_RATE_OF_PAY: Hourly payment rate.
+
+  * OVERTIME_RATE_FROM: Overtime working hourly payment rate.
+
+  * EMP_EXPERIENCE_REQD: whether the job need experience before.
+
+  * WORKSITE_STATE: the state to work.
+ 
+
+```{r, feature_selection}
+# only select features that we decided to use
+H2B_used_data <- H2B_data %>% 
+  select(CASE_STATUS, EMPLOYER_STATE, EMPLOYER_REP_BY_AGENT, 
+         SOC_CODE, FULL_TIME_POSITION, NATURE_OF_TEMPORARY_NEED, 
+         BASIC_NUMBER_OF_HOURS, BASIC_RATE_OF_PAY, OVERTIME_RATE_FROM,
+         EMP_EXPERIENCE_REQD, PAY_RANGE_UNIT, WORKSITE_STATE)
+
+# omit the records contains n/a value for our selected features
+H2B_used_data <- na.omit(H2B_used_data)
+H2B_used_data$PAY_RANGE_UNIT = NULL
+head(H2B_used_data)
+
+# check the data set dimension
+dim(H2B_used_data)
+```
+
+### 2. Features and response encoding:
+
+1. Encode the response variable "CASE_STATUS" as 0 (not certificate), and 1 (certificate):
+```{r, encode_response_variable_status}
+# create new column for our data set called status using 0/1 encoding
+H2B_used_data$case_status[H2B_used_data$CASE_STATUS == 'Determination Issued - Certification'] <- "1"
+H2B_used_data$case_status[H2B_used_data$CASE_STATUS == 'Determination Issued - Certification (Returned)'] <- "1"
+H2B_used_data$case_status[H2B_used_data$CASE_STATUS == 'Determination Issued - Denied'] <- "0"
+H2B_used_data$case_status[H2B_used_data$CASE_STATUS == 'Determination Issued - Partial Certification'] <- "1"
+H2B_used_data$case_status[H2B_used_data$CASE_STATUS == 'Determination Issued - Rejected'] <- "0"
+H2B_used_data$case_status[H2B_used_data$CASE_STATUS == 'Determination Issued - Partial Certification (Returned)'] <- "1"
+
+# delete the original CASE_STATUS column
+H2B_used_data$CASE_STATUS = NULL
+
+# check the first 10 rows for the data set
+head(H2B_used_data)
+```
+
+2. Label the "EMPLOYER_STATE" with discrete numbers:
+
+  - "alabama" : 1
+  - "alaska" : 2
+  - "arizona" : 3
+  - "arkansas" : 4
+  - "california" : 5
+  - "colorado" : 6
+  - "connecticut" : 7
+  - "delaware" : 8
+  - "florida" : 9
+  - "georgia" : 10
+  - "idaho" : 11
+  - "illinois" : 12
+  - "indiana" : 13
+  - "iowa" : 14
+  - "kansas" : 15
+  - "kentucky" : 16
+  - "louisiana" : 17
+  - "maine" : 18
+  - "maryland" : 19
+  - "massachusetts" : 20
+  - "michigan" : 21
+  - "minnesota" : 22
+  - "mississippi" : 23
+  - "missouri" : 24
+  - "montana" : 25
+  - "nebraska" : 26
+  - "nevada" : 27
+  - "new hampshire" : 28
+  - "new jersey" : 29
+  - "new mexico" : 30
+  - "new york" : 31
+  - "north carolina" : 32
+  - "north dakota" : 33
+  - "northern mariana islands" : 34
+  - "ohio" : 35
+  - "oklahoma" : 36
+  - "oregon" : 37
+  - "pennsylvania" : 38
+  - "rhode island" : 39
+  - "south carolina" : 40
+  - "south dakota" : 41
+  - "tennessee" : 42
+  - "texas" : 43
+  - "utah" : 44
+  - "vermont" : 45
+  - "virginia" : 46
+  - "washington" : 47
+  - "west virginia" : 48
+  - "wisconsin" : 49
+  - "wyoming" : 50
+
+```{r, label_employer_state}
+# check employer_state unique value
+
+count(H2B_used_data, EMPLOYER_STATE)
+
+# convert the column all to lower cases.
+H2B_used_data$EMPLOYER_STATE <- tolower(H2B_used_data$EMPLOYER_STATE)
+
+# encode 
+H2B_used_data$employer_state <- 
+ plyr:: mapvalues(H2B_used_data$EMPLOYER_STATE, 
+
+            from = c("alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut", "delaware", "florida", "georgia", "idaho", "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan", "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada", "new hampshire", "new jersey", "new mexico", "new york", "north carolina", "north dakota", "northern mariana islands", "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina", "south dakota", "tennessee", "texas", "utah", "vermont", "virginia", "washington", "west virginia", "wisconsin", "wyoming"),
+            
+            to = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50"))
+
+# delete the original column
+H2B_used_data$EMPLOYER_STATE = NULL
+head(H2B_used_data)
+```
+
+3. Label "EMPLOYER_REP_BY_AGENT" field with yes = 1, no = 0:
+```{r, label_employer_rep_by_agent}
+# check EMPLOYER_REP_BY_AGENT unique value
+count(H2B_used_data, EMPLOYER_REP_BY_AGENT)
+
+# encode 
+H2B_used_data$employer_rep_by_agent <- 
+  mapvalues(H2B_used_data$EMPLOYER_REP_BY_AGENT,
+            from = c("Yes", "No"),
+            to =  c("1", "0"))
+
+# delete the original column
+H2B_used_data$EMPLOYER_REP_BY_AGENT = NULL
+head(H2B_used_data)
+```
+
+4. Extract "SOC_CODE" field:
+
+```{r, extract_soc_code}
+# check blank or ill-formatted column
+sum(nchar(H2B_used_data$SOC_CODE) < 7)
+
+# delete blank data rows
+H2B_used_data <- H2B_used_data[nchar(H2B_used_data$SOC_CODE) >= 7, ]
+
+# encode (extract the first two digits)
+H2B_used_data$soc_code <- substr(H2B_used_data$SOC_CODE, 1, 2)
+
+# delete the original column
+H2B_used_data$SOC_CODE = NULL
+head(H2B_used_data)
+```
+
+5. Label FULL_TIME_POSITION with yes = 1, no = 0:
+```{r, label_full_time_position}
+# check NATURE_OF_TEMPORARY_NEED unique value
+count(H2B_used_data, FULL_TIME_POSITION)
+
+# encode 
+H2B_used_data$full_time_position <-
+  mapvalues(H2B_used_data$FULL_TIME_POSITION,
+            from = c("Y", "N"),
+            to =  c("1", "0"))
+
+# delete the original column
+H2B_used_data$FULL_TIME_POSITION = NULL
+head(H2B_used_data)
+```
+
+6. Label "NATURE_OF_TEMPORARY_NEED" field:
+
+  - Intermittent: 1
+  - One-Time Occurrence: 2
+  - Peakload: 3
+  - Seasonal: 4  
+
+```{r, label_nature_of_temporary_need}
+# check NATURE_OF_TEMPORARY_NEED unique value
+count(H2B_used_data, NATURE_OF_TEMPORARY_NEED)
+
+# encode
+H2B_used_data$nature_of_temporary_need <-
+  mapvalues(H2B_used_data$NATURE_OF_TEMPORARY_NEED,
+            from = c("Intermittent", "One-Time Occurrence", "Peakload", "Seasonal"),
+            to =  c("1", "2", "3", "4"))
+
+# delete the original column
+H2B_used_data$NATURE_OF_TEMPORARY_NEED = NULL
+head(H2B_used_data)
+```
+
+7. Rename BASIC_NUMBER_OF_HOURS, BASIC_RATE_OF_PAY, OVERTIME_RATE_FROM:
+```{r, rename_columns}
+# check BASIC_NUMBER_OF_HOURS unique value
+count(H2B_used_data, BASIC_NUMBER_OF_HOURS)
+
+# rename column 
+H2B_used_data <- 
+  H2B_used_data %>% rename(basic_number_of_hours = BASIC_NUMBER_OF_HOURS,
+                           basic_rate_of_pay = BASIC_RATE_OF_PAY,
+                           overtime_rate_from = OVERTIME_RATE_FROM)
+
+head(H2B_used_data)
+```
+
+8. Label EMP_EXPERIENCE_REQD with yes = 1, no = 0:
+```{r, label_employee_experience_required}
+# check EMP_EXPERIENCE_REQD unique value
+count(H2B_used_data, EMP_EXPERIENCE_REQD)
+
+# encode 
+H2B_used_data$emp_experience_reqd <-
+  mapvalues(H2B_used_data$EMP_EXPERIENCE_REQD,
+            from = c("Yes", "No"),
+            to =  c("1", "0"))
+
+# delete the original column
+H2B_used_data$EMP_EXPERIENCE_REQD = NULL
+head(H2B_used_data)
+```
+
+9. Label the "WORKSITE_STATE" with discrete numbers, followed by the rules of "EMPLOYER_STATE":
+```{r, label_worksite_state}
+# check employer_state unique value
+count(H2B_used_data, WORKSITE_STATE)
+
+# delete blank data rows
+H2B_used_data <- H2B_used_data[nchar(H2B_used_data$WORKSITE_STATE) > 0, ]
+
+# convert the column all to lower cases.
+H2B_used_data$WORKSITE_STATE <- tolower(H2B_used_data$WORKSITE_STATE)
+
+# encode 
+H2B_used_data$worksite_state <- 
+  mapvalues(H2B_used_data$WORKSITE_STATE, 
+
+            from = c("alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut", "delaware", "florida", "georgia", "idaho", "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan", "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada", "new hampshire", "new jersey", "new mexico", "new york", "north carolina", "north dakota", "northern mariana islands", "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina", "south dakota", "tennessee", "texas", "utah", "vermont", "virginia", "washington", "west virginia", "wisconsin", "wyoming"),
+            
+            to = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50"))
+
+# delete the original column
+H2B_used_data$WORKSITE_STATE = NULL
+head(H2B_used_data)
+```
+
+```{r}
+head(H2B_used_data)
+```
+
+
+### 3. Data exploration:
+
+**Variables division:**
+
+**Continuous variables:**
+
+  * basic_number_of_hours: Weekly working hours needed.
+  * basic_rate_of_pay: hourly payment rate.
+  * overtime_rate_from: overtime working hourly payment rate.
+
+**Categorical variables:**
+
+  * employer_state: The employer's state in the US.
+  * employer_rep_by_agent: Either the employer use agent to represent them applying the visa.
+  * full_time_position: Whether the job is a full time position or not.
+  * nature_of_temporary_need: The job needed based on what occurrences.
+  * social code: The empolyee'social code number.
+  * emp_experience_reqd: Whether this job need previous experience.
+
+**Response variable: **
+
+  * case_status: The H2B visa application status.
+
+**Interesting summary statistics found during data exploration:**
+
+  * About 10% of the application get rejected, while more than 90% application for this visa get certificate.
+  * Texas has the most application for this visa, while Pennsylvania has the second place.
+  * More than 94% present of the companies represented by an Agent or Attorney.
+  * Texas has the highest hourly wage about $1000 per hour with no over time wages.
+  * With a few points outliners, the mean average hourly payment is around 17 dollars per hour but the highest is around 1000 dollars.
+
+```{r, overview_of_status}
+# count different visa status
+count(H2B_used_data, case_status)
+
+# draw the histogram for the count
+H2B_used_data %>% ggplot(aes(x = case_status)) + 
+  geom_bar(stat = "count", width = 0.5, color='red', fill = 'steelblue')
+```
+
+```{r, count_number_of_application_over_states}
+# draw the bar graph for how many H2B applications were submitted each state for the year 2019 with descending order
+employer_state_count <- data.frame(table(H2B_used_data$employer_state))
+
+# employer_state_count
+employer_state_count %>% ggplot(aes(x = reorder(Var1,-Freq), y = Freq)) +   geom_bar(stat="identity",,fill='steelblue')
+```
+
+```{r, employer_represented_by_agent}
+# see how many companies are using law agent or attorney for their employee's visa application
+count(H2B_used_data, employer_rep_by_agent)
+```
+
+```{r, hourly_payment}
+pay_rate_state <-
+  H2B_used_data %>% select(basic_rate_of_pay,employer_state)
+
+pay_rate_state <- 
+  subset(pay_rate_state,
+         basic_rate_of_pay != 65000.00 & basic_rate_of_pay != 1000.00) 
+
+# pay_rate_state %>% ggplot(aes(x = basic_rate_of_pay)) + geom_boxplot()
+pay_rate_state %>% ggplot() + 
+  geom_boxplot(aes(x = basic_rate_of_pay, y=employer_state))
+
+summary(pay_rate_state)
+```
+
+```{r, employer_payment_rate}
+# check the pay rate with employer states
+result <- pay_rate_state %>% select(employer_state, basic_rate_of_pay)
+```
+
+### 4. Models:
+
+1. Check if the variables are correlated. Those who are highly correlated we can't use them in the classification.
+```{r, check_correlations}
+# convert dataframe to numeric type for correlation calculation
+dim(H2B_used_data)
+H2B_used_data[,] <- sapply(H2B_used_data[,], as.numeric)
+#head(h2b_data_correlation)
+
+cor(H2B_used_data) %>% ggcorrplot()
+```
+
+After the plotting, looks like most of them are not correlated except the basic_rate_of_pay is highly correlated with the overtime_rate_from, which is reasonable because the overtime payment is based on the basic rate of pay.And also the worksite_state and employer_state are highly correlated, which means most of the employer preferred to hire people just for their locations. However we decided still use them as different predictors, we should expect highly consistent performance between the two.<br>
+
+2. First try the logistic linear model, in order to make the correct binary classification.
+```{r, simple_logistic_regression}
+set.seed(12345)
+log_reg <- glm(case_status ~ ., data = H2B_used_data, family = "binomial")
+summary(log_reg)
+```
+
+We got the warning saying: <br>
+glm.fit: fitted probabilities numerically 0 or 1 occurred <br>
+which means in our independent variables, there are variables making perfect separation for the dependent variable case_status. After doing some analysis, we found basic_rate_of_pay is the one with perfect seperation for response variable for the dataset. We thus dropped the basic_rate_of_pay feature for this regression because we don't want it to be the sole determine variable for either case pass or non-pass.
+
+```{r, glm_cross_validation}
+set.seed(12345)
+# delete the feature basic_rate_of_pay
+simple_logistic_data <- H2B_used_data %>% select(-basic_rate_of_pay)
+
+# train the logistic model
+log_reg <- glm(case_status ~ ., data = simple_logistic_data, family = "binomial")
+
+# logistic model with 5 fold cross validation
+log_reg_cv_5 <- cv.glm(data = simple_logistic_data, log_reg, K = 5)
+
+# The first component of delta is the average mean-squared error that you obtain from doing K-fold CV. The second component of delta is the average mean-squared error that you obtain from doing K-fold CV, but with a bias correction.
+log_reg_cv_5$delta
+```
+The first component of delta is the average mean-squared error that we obtained from doing K-fold CV. The second component of delta is the same but with a bias correction. Looks like just using simple logistic model for this dataset is suitable enough, because it has very low average mean-squared error only 0.07.<br>
+Now we can use the first model we train to interpret the data.<br>
+employer_rep_by_agent, soc_code, nature_of_temporary_need, worksite_state 4 variables looks like have significant effects on the result for either the case is pass or not. Surprisingly, the employer_state has less effect on affecting whether the case will pass or not than worksite_state as we see in the correlation graph.<br>
+
+Now we visualize the four variables to the case_status.
+```{r, 4_most_significant_variables}
+# select needed data
+most_siginificant_variables <- H2B_used_data %>% select(employer_rep_by_agent, soc_code, nature_of_temporary_need, worksite_state, case_status)
+```
+
+* soc_code:
+```{r, soc_code_case_status}
+#head(H2B_used_data)
+# select data and re-encode the results for readability 
+soc_code_case <- most_siginificant_variables %>% select(soc_code,case_status)
+# recode the status data for readability for graph
+soc_code_case$case_status_word[soc_code_case$case_status == '1'] <- "pass"
+soc_code_case$case_status_word[soc_code_case$case_status == '0'] <- "reject"
+soc_code_case$case_status = NULL
+
+soc_code_case %>% ggplot() + 
+                  geom_histogram(mapping = aes(x = soc_code), bins = 20) + 
+                  facet_wrap( ~ case_status_word, scales = "free")
+```
+
+According to the graph, most pass case for the visa for soc_code are codes start with 37. After checking the original data, the category for that are "Maids and Housekeeping Cleaners", "Landscaping and Groundskeeping Workers" those projects which need actual people to work on. Most of the visa rejection for soc_code starting with 47, which most soc_title are "Construction Laborers","Painters, Construction and Maintenance", "Plumbers, Pipefitters, and Steamfitters". We think this make sense because in the US, there are schools called track school which people study there to learn how to fix stuff like Home Appliances so there should be no need to hire accross the world just for a more expensive labor.<br><br>
+
+* employer_rep_by_agent:
+```{r, employer_rep_by_agent_case_status}
+# select data and re-encode the results for readability 
+employer_rep_by_agent_case <- most_siginificant_variables %>% select(employer_rep_by_agent,case_status)
+
+# recode the status data for readability for graph
+employer_rep_by_agent_case$case_status_word[employer_rep_by_agent_case$case_status == '1'] <- "pass"
+employer_rep_by_agent_case$case_status_word[employer_rep_by_agent_case$case_status == '0'] <- "reject"
+employer_rep_by_agent_case$case_status = NULL
+
+employer_rep_by_agent_case %>% ggplot() + 
+                  geom_histogram(mapping = aes(x = employer_rep_by_agent), bins = 20) + 
+                  facet_wrap( ~ case_status_word, scales = "free")
+```
+
+According to the graph, either the employer using the agent to represent themselves may not be as clear as the soc_code. They look like they have similar rate of reject and pass.<br>
+
+* nature_of_temporary_need:
+```{r, nature_of_temporary_need_case_status}
+# select data and re-encode the results for readability 
+nature_of_temporary_need_case <- most_siginificant_variables %>% select(nature_of_temporary_need,case_status)
+# recode the status data for readability for graph
+nature_of_temporary_need_case$case_status_word[nature_of_temporary_need_case$case_status == '1'] <- "pass"
+nature_of_temporary_need_case$case_status_word[nature_of_temporary_need_case$case_status == '0'] <- "reject"
+nature_of_temporary_need_case$case_status = NULL
+
+nature_of_temporary_need_case %>% ggplot() + 
+                  geom_histogram(mapping = aes(x = nature_of_temporary_need), bins = 20) + 
+                  facet_wrap( ~ case_status_word, scales = "free")
+```
+  - Intermittent: 1
+  - One-Time Occurrence: 2
+  - Peakload: 3
+  - Seasonal: 4
+
+Some interesting part we notice is if the employer try to apply for intermittent (regular) employee visa, they will get 100% rejected, which may be true because the visa is H2B a non-immigrate visa, and intermittent employee may sound like they have the intension for immigrate.
+The one-time occurance also get high possibily to be rejected which also make sense.
+
+3? 4?
+
+* worksite_state:
+```{r, worksite_state}
+# select data and re-encode the results for readability 
+worksite_state_case <- most_siginificant_variables %>% select(worksite_state,case_status)
+# recode the status data for readability for graph
+worksite_state_case$case_status_word[worksite_state_case$case_status == '1'] <- "pass"
+worksite_state_case$case_status_word[worksite_state_case$case_status == '0'] <- "reject"
+worksite_state_case$case_status = NULL
+
+worksite_state_case %>% ggplot() + 
+                  geom_histogram(mapping = aes(x = worksite_state), bins = 20) + 
+                  facet_wrap( ~ case_status_word, scales = "free")
+```
+
+Did not see any possible relationships?????? Also should we use rate instead of counts>?????
+
+
+3. We also tried to fit another glmnet model to see if we could improve our performance.
+```{r, glmnet_model_cv5}
+# delete the feature basic_rate_of_pay
+simple_logistic_data <- H2B_used_data %>% select(-basic_rate_of_pay)
+
+# make the response variable into factor in order to make the train() work
+simple_logistic_data$case_status_word[simple_logistic_data$case_status == '1'] <- "one"
+simple_logistic_data$case_status_word[simple_logistic_data$case_status == '0'] <- "zero"
+
+simple_logistic_data$case_status_word <- as.factor(simple_logistic_data$case_status_word)
+
+simple_logistic_data$case_status = NULL
+
+#head(simple_logistic_data)
+# caret package for cross validation
+my_ctrl <- trainControl(method = "cv", 
+                        number = 5, 
+                        savePredictions = TRUE,
+                        classProbs = TRUE)
+
+# train the model using caret::train
+set.seed(12345)
+logistic_model <- train(case_status_word ~ ., 
+                        data = simple_logistic_data, 
+                        method = "glmnet",
+                        metric = "Accuracy",
+                        trControl = my_ctrl)
+logistic_model
+```
+Unfortunately, the build in metric for glmnet does not have ROC as its matric so we use Accuracy instead. As you can see here, using the glmnet model training the data can get the accuracy as high as 90% for the 5 fold cross validation. Accuracy is the percentage of correctly classifies instances out of all instances. Because it is a binary classifier, the Accuracy is good enough to interpret the model performance. Here we sacrifice the interpretation for the performance, the results looks pretty good.<br>
+
+
+```{r}
+set.seed(1)
+head(H2B_used_data)
+# CASE_STATUS, EMPLOYER_STATE, EMPLOYER_REP_BY_AGENT, 
+     #    FULL_TIME_POSITION, NATURE_OF_TEMPORARY_NEED, 
+       #  EMP_EXPERIENCE_REQD, PAY_RANGE_UNIT, WORKSITE_STATE)
+
+#employer_rep_by_agent, soc_code, nature_of_temporary_need, worksite_state
+cluster_data<-H2B_used_data%>% select(case_status,employer_state,employer_rep_by_agent,full_time_position,nature_of_temporary_need,emp_experience_reqd,worksite_state,soc_code)
+clusterg = kmeans(cluster_data[,-1], centers=4, nstart=10) #employer_rep_by_agent, soc_code, nature_of_temporary_need, worksite_state
+plot(cluster_data$employer_state, cluster_data$worksite_state, type="n", xlab="employer_state", ylab="worksite_state")
+text(cluster_data$employer_state, cluster_data$worksite_state, labels=cluster_data$case_status, col=clusterg$cluster+1)
+```
+
+```{r}
+set.seed(1)
+average_4_dist=dist(cluster_data)
+average_4_hc=hclust(average_4_dist,method='average')
+#plot(average_4_hc)
+average_4_hc_1=cutree(average_4_hc,k=4)
+plot(cluster_data$employer_state,cluster_data$worksite_state,type="n",xlab="employer_state", ylab="worksite_state")
+text(x=cluster_data$employer_state,y=cluster_data$worksite_state,labels=cluster_data$case_status, col=average_4_hc_1)
+```
+we are interested in how the worksite and employer state clusters. To analyse that, we choose kmeans-4 and average-link for k-4 because we think by this method we can clearly plot the gragh. From the gragh we find that in employer_state 37, people have great possibility to pass the certification, which is oregon. Futher more， we find that if the employer state is the same as the worksite state， it is less likely for people to get the H2B pass.
+
+```{r}
+set.seed(1)
+#keans-4
+clusterg_2 = kmeans(cluster_data[,-1], centers=8, nstart=10) #employer_rep_by_agent, soc_code, nature_of_temporary_need, worksite_state
+plot( cluster_data$worksite_state,cluster_data$soc_code, type="n",xlim=c(0,50),ylim=c(30,55), xlab="worksite_state", ylab="soc_code")
+text(cluster_data$worksite_state, cluster_data$soc_code,labels=cluster_data$case_status, col=clusterg_2$cluster+1)
+#4-clusters with average-link. 
+average_4_hc_2=cutree(average_4_hc,k=8)
+plot(cluster_data$worksite_state,cluster_data$soc_code,type="n",xlim=c(0,50),ylim=c(30,55),xlab="worksite_state", ylab="soc_code")
+text(x=cluster_data$worksite_state,y=cluster_data$soc_code,labels=cluster_data$case_status, col=average_4_hc_2)
+```
+we are interested in how the worksite and soc_code clusters. To analyse that, we choose kmeans-8 and average-link for k-8 because we think by this method we can clearly plot the gragh and I also cut some discrete value.To see these two siginficant variables, we do the cluster and the result correspond to what we get by classification before, large amount of people with social code 37 seem to pass the H2B. We also find that soc_code with 49 has the highest possibility to pass while the total amount is not large.
+```{r}
+set.seed(1)
+#keans-4
+clusterg_2 = kmeans(cluster_data[,-1], centers=8, nstart=10) #employer_rep_by_agent, soc_code, nature_of_temporary_need, worksite_state
+plot( cluster_data$employer_state,cluster_data$soc_code, type="n",xlim=c(0,50),ylim=c(30,55), xlab="employer_state", ylab="soc_code")
+text(cluster_data$employer_state, cluster_data$soc_code,labels=cluster_data$case_status, col=clusterg_2$cluster+1)
+#4-clusters with average-link. 
+average_4_hc_2=cutree(average_4_hc,k=8)
+plot(cluster_data$employer_state,cluster_data$soc_code,type="n",xlim=c(0,50),ylim=c(30,55),xlab="employer_state", ylab="soc_code")
+text(x=cluster_data$employer_state,y=cluster_data$soc_code,labels=cluster_data$case_status, col=average_4_hc_2)
+```
+we are interested in how the employer_state and soc_code clusters. To analyse that, we choose kmeans-8 and average-link for k-8 because we think by this method we can clearly plot the gragh and I also cut some discrete value. Besides what we find about soc_code, we find people in employer state around 21 is more likely to pass the H2B which is in the south of the USA.
+# 3. Your answers to Problem 3.
+
+a) We want to analyze what coefficients can affect the H2B visa pass rate. We have learned the background of our data deeply and cleaned all the data and marked the label. We also tried to use non-linear prediction and clustering ways.
+
+b) This topic is useful in our daily life when we worked in the USA because it can help us with applying the H2B visa. This problem is challenging because we need to deal with nearly 10 coefficients to predict and the data is also large for us to deal with.
+
+c) We will evaluate our methods by Accuracy.
+
+d) We have found some related work.
+
+e) we need to find a good way or method to fit our data in. We plan to solve it by try more predicting ways during this period.
+
+
+
